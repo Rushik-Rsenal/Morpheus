@@ -13,5 +13,7 @@ CREATE TABLE post (
   created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   title TEXT NOT NULL,
   body TEXT NOT NULL,
+  script_name TEXT NOT NULL,
+  script_body BLOB,
   FOREIGN KEY (author_id) REFERENCES user (id)
 );
