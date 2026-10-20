@@ -1,0 +1,121 @@
+* {
+  font-family: sans-serif;
+  background-color: #eee;
+  padding: 1rem;
+}
+
+body {
+  max-width: 960px;
+  margin: 0 auto;
+  background-color: white;
+}
+
+#app-name, ul, li, a, #username-text {
+  font-family: sans-serif;
+  color: #377ba8;
+  margin: 1rem 0;
+  background-color: #000;
+}
+
+#username-text {
+  color: white;
+}
+
+#link-container {
+  position: relative;
+  right: 100px;
+  display: flex;
+  width: 400px;
+  justify-content: space-between;
+}
+
+a {
+  color: #377ba8;
+  text-decoration: none;
+  font-size: 1.1em;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid lightgray;
+}
+
+nav {
+  background-color: #000;
+  display: flex;
+  align-items: center;
+  padding: 0 0.5rem;
+}
+
+nav h1 {
+  flex: auto;
+  margin: 0;
+}
+
+nav h1 a {
+  text-decoration: none;
+  padding: 0.25rem 0.5rem;
+}
+
+nav ul {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+nav ul li a, nav ul li span, header .action {
+  display: block;
+  padding: 0;
+}
+
+.content { padding: 0 1rem 1rem; }
+.content > header { border-bottom: 1px solid eee; display: flex; align-items: flex-end; }
+.content > header h1 { flex: auto; margin: 1rem 0 0.25rem 0; }
+.flash { margin: 1em 0; padding: 1em; background: #eee; border: 1px solid #377ba8; }
+
+.post {
+  background-color: white;
+  border-color: #000;
+  border-width: 2px;
+  border-radius: 10px;
+  border-style: solid;
+  padding: 1em;
+}
+
+#post-title, .about, .a.action {
+  padding: 0;
+}
+
+.action {
+  position: relative;
+  background-color: #eee;
+  left: 18px;
+  width: 40px;
+}
+
+.post .body {
+  background-color: white;
+}
+
+
+.index-header {
+  border-radius: 10px;
+  border: #000 solid 2px;
+}
+
+
+input.danger { color: #cc2f2e; }
+input[type=submit] { align-self: start; min-width: 10em; }
+
+#create-workflow-form, #edit-workflow-form {
+  display: flex;
+  flex-direction: column;
+}
+
+#use-workflow-button {
+  position: relative;
+  left: 500px;
+  bottom: 50px;
+  background-color: #eee;
+}
