@@ -5,8 +5,6 @@
   {% if g.user %}
   <div id="link-container">
     <a class="action" href="{{ url_for('blog.create') }}">Well-level Visualisation</a>
-    <a class="action" href="{{ url_for('blog.create') }}">Single-Cell Visualisation</a>
-    <a class="action" href="{{ url_for('blog.create') }}">Single-Cell Normalisation</a>
   </div>
   {% endif %}
 {% endblock %}
@@ -21,12 +19,15 @@
         </div>
         {% if g.user['id'] == post['author_id'] %}
           <a class="action" href="{{ url_for('blog.update', id=post['id']) }}">Edit Workflow</a>
-          <a href="{{ url_for('blog.use', id=post['id']) }}" id="use-workflow-button">Use Workflow</a>
         {% endif %}
       </header>
       <p class="body">{{ post['body'] }}</p>
     </article>
-    <img src="data:image/png;base64,{{ plot_url }}" alt="Seaborn Plot" width="80%" height="80%">
+    {% for image in images %}
+    {% if post['id'] == image['post_id'] %}
+      <img src="data:image/png;base64,{{ image['plot_url'] }}" alt="Seaborn Plot" width="80%" height="80%"  style="display: block; margin-left: auto; margin-right: auto;">
+    {% endif %}
+    {% endfor %}
     {% if not loop.last %}
       <hr>
     {% endif %}

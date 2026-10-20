@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block header %}
+  <h1>{% block title %}Dataset Summary{% endblock %}</h1>
+  {% if g.user %}
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <form id="columns-and-timepoints" method="POST">
+    <!-- Select the feature -->
+    <div id="feature-form">
+      <h2>Select Feature</h2>
+      {% for column in columns %}
+      <input name="{{ column }}" id="{{ column }}" type="checkbox" value="{{ column }}">
+      <label for="{{ column }}">{{ column }}</label>
+      {% if not loop.last %}
+      <hr>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    <!-- Select stressor -->
+     <div id="stressor-form">
+       <h2>Select Stressor</h2>
+       {% for stressor in stressors %}
+       <input type="checkbox" value="{{ stressor }}" name="{{ stressor }}" id="{{ stressor }}">
+       <label for="{{ stressor }}">{{ stressor }}</label>
+       {% if not loop.last %}
+       <hr>
+       {% endif %}
+       {% endfor %}
+     </div>
+
+    <!-- Select timepoint -->
+    <div id="timepoint-form">
+      <h2>Select timepoint</h2>
+      {% for timepoint in timepoints %}
+      <input type="checkbox" value="T{{ timepoint }}" name="T{{ timepoint }}" id="T{{ timepoint }}">
+      <label for="T{{ timepoint }}">{{ timepoint }}</label>
+      {% if not loop.last %}
+      <hr>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    <!-- Select batches -->
+    <div id="cell-type-form">
+      <h2>Select batch</h2>
+      {% for batch in batches %}
+      <input type="checkbox" value="{{ batch }}" name="{{ batch }}" id="{{ batch }}">
+      <label for="{{ batch }}">{{ batch }}</label>
+      {% if not loop.last %}
+      <hr>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    <!-- Select celltype -->
+    <div id="cell-type-form">
+      <h2>Select cell_type</h2>
+      {% for cell_type in cell_types %}
+      <input type="checkbox" value="{{ cell_type }}" name="{{ cell_type }}" id="{{ cell_type }}">
+      <label for="{{ cell_type }}">{{ cell_type }}</label>
+      {% if not loop.last %}
+      <hr>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    <input type="submit" value="submit">
+  </form>
+{% endblock %}

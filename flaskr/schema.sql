@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS user;
 DROP TABLE IF EXISTS post;
+DROP TABLE IF EXISTS image_table;
 
 CREATE TABLE user (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,4 +17,11 @@ CREATE TABLE post (
   script_name TEXT NOT NULL,
   script_body BLOB,
   FOREIGN KEY (author_id) REFERENCES user (id)
+);
+
+CREATE TABLE image_table (
+  plot_url TEXT NOT NULL,
+  post_id INTEGER NOT NULL,
+  FOREIGN KEY (post_id) REFERENCES post(id),
+  PRIMARY KEY (plot_url)
 );

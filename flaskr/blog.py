@@ -5,18 +5,14 @@ from werkzeug.exceptions import abort
 from werkzeug.utils import secure_filename
 from flaskr.auth import login_required
 from flaskr.db import get_db
-import os
-import sys
-import subprocess
-import tempfile
 import pandas as pd
 import seaborn as sns
 from matplotlib.patches import Patch
 from matplotlib import pyplot as plt
-import sys
 import numpy as np
 import io
 import base64
+import urllib.parse
 
 ALLOWED_DATA_EXTENSIONS = {'csv', 'json', 'txt', 'xlsx'}
 ALLOWED_SCRIPT_EXTENSIONS = {'py'}
@@ -27,12 +23,10 @@ def allowed_file(filename, allowed_set):
 
 bp = Blueprint('blog', __name__)
 
-plot_url = None
+initial_dataframe = None
 
 @bp.route('/')
 def index():
-    global plot_url
-
     db = get_db()
     posts = db.execute(
         'SELECT p.id, title, body, created, author_id, username'
@@ -40,150 +34,318 @@ def index():
         ' ORDER BY created DESC'
     ).fetchall()
 
-    return render_template('blog/index.html', posts=posts, plot_url=plot_url)
+    images = db.execute(
+        'select plot_url, post_id'
+        ' from image_table i join post on post.id = i.post_id'
+    ).fetchall()
 
+    return render_template('blog/index.html', posts=posts, images=images)
+
+# Create a workflow
 @bp.route('/create', methods=('GET', 'POST'))
 @login_required
 def create():
-    global plot_url
+    global initial_dataframe
 
     if request.method == 'POST':
+        # Get the title and the body
         title = request.form['title']
         body = request.form['body']
 
-        # Check if the file is there
-        if 'script' not in request.files:
-            flash('No file part')
-            return redirect(request.url)
-
-        script = request.files['script']
+        # Get the dataset
         dataset = request.files['dataset']
 
-
-        if script.filename == '':
-            flash('No selected script')
-            return redirect(request.url)
-        elif dataset.filename == '':
+        # Get the dataset filename
+        if dataset.filename == '':
             flash("No selected dataset")
-            return redirect(request.url)
-        if script and allowed_file(script.filename, ALLOWED_SCRIPT_EXTENSIONS) and allowed_file(dataset.filename, ALLOWED_DATA_EXTENSIONS):
+            return redirect(url_for("blog.create"))
 
-            # We store the dataset
-            db = get_db()
-
+        # Get the allowed data extensions
+        if allowed_file(dataset.filename, ALLOWED_DATA_EXTENSIONS):
             # Check the file extension
             if dataset.filename.rsplit('.', 1)[1].lower() == 'xlsx':
                 # Read the excel file
                 df = pd.read_excel(dataset, sheet_name=0)
+                initial_dataframe = df
 
-                # Update the params for better looking graphs
-                plt.rcParams.update(
-                    {
-                        "font.size": 11,
-                        "font.family": 'serif',
-                        "font.serif": ['Liberation Serif'],
-                        "mathtext.fontset": 'stix',
-                        "axes.labelsize": 12,
-                        "xtick.labelsize": 10,
-                        "ytick.labelsize": 10,
-                        "legend.fontsize": 10,
-                        "figure.figsize": (6,4),
-                        "figure.dpi": 300,
-                        "savefig.dpi": 300,
-                        "savefig.bbox": "tight",
-                        "axes.linewidth": 1.2,
-                        "grid.linewidth": 0.8,
-                        "lines.linewidth": 2,
-                    }
-                )
+                # Get only the features and not other well information 
+                features = initial_dataframe.drop(
+                    columns=["Celltype", 
+                             "Cellline ID",
+                              "Batch",
+                              "Stressor",
+                              "Row",
+                              "Column",
+                              "Timepoint",
+                              "cell_number"]
+                ).columns
+                columns = features
+
+                # Get the timepoints 
+                timepoints = initial_dataframe["Timepoint"].unique() 
+
+                # Get the cell types
+                cell_types = initial_dataframe["Celltype"].unique()
+
+                # Get the stressors
+                stressors = initial_dataframe["Stressor"].unique()
+
+                # Get the batches
+                batches = initial_dataframe["Batch"].unique()
+
+                # Basic Error handling
+                error = None
+
+                if not title:
+                    error = 'Title is required.'
+                
+                if error is not None:
+                    flash(error)
+                else:
+                    # Insert the post related stuff 
+                    db = get_db()
+                    db.execute(
+                        'INSERT INTO post (title, body, author_id, script_name, script_body)'
+                        ' VALUES (?, ?, ?, ?, ?)',
+                        (title, body, g.user['id'], "script.filename", "script.read()")
+                    )
+                    db.commit()
+
+                    # Redirect to the next screen
+                    query_string = urllib.parse.urlencode({'timepoints': timepoints, 
+                                                           "cell_types": cell_types,
+                                                           "stressors": stressors,
+                                                           "batches": batches,
+                                                           "columns": columns}, doseq=True)
+    
+                    # Construct the full destination URL and redirect
+                    target_url = f"{url_for('blog.next_screen')}?{query_string}"
+                    return redirect(target_url)
+            else:
+                print("Bro wrong datatype")
+    return render_template('blog/create.html')
+
+# Log-fold change function
+def well_level_data_analysis_log_fold_change(df, col_name, timepoint, stressor, letter, axes):
+    #  Update the params for better looking graphs
+    plt.rcParams.update(
+                        {
+                            "font.size": 11,
+                            "font.family": 'serif',
+                            "font.serif": ['Liberation Serif'],
+                            "mathtext.fontset": 'stix',
+                            "axes.labelsize": 12,
+                            "xtick.labelsize": 10,
+                            "ytick.labelsize": 10,
+                            "legend.fontsize": 10,
+                            "figure.figsize": (6,4),
+                            "figure.dpi": 300,
+                            "savefig.dpi": 300,
+                            "savefig.bbox": "tight",
+                            "axes.linewidth": 1.2,
+                            "grid.linewidth": 0.8,
+                            "lines.linewidth": 2,
+                        }
+    )
+
+    # Extract rows from a particular timepoint
+    df_init = df
+    df_extracted = df_init[df_init["Timepoint"] == timepoint]
+    df_extracted = df_extracted[df_extracted["Stressor"] == stressor]
+
+    # Extract the required columns
+    df_extracted = df_extracted[["Celltype", "Cellline ID","Batch", col_name]]
+
+    # Calculate the average of Control for each Batch
+    batches = df_extracted["Batch"].unique()
+    df_extracted = df_extracted.set_index("Batch")
+
+    # Control_AVG
+    control_avg_dict = {}
+    cellline_df_list = []
+
+    # For each batch, calculate the cell-line average
+    for batch in batches:
+        # Get the batch
+        selected_batch = df_extracted.loc[batch]
+
+        # Error check
+        if len(selected_batch) == 0:
+            flash("This messed up!")
+
+        # Get the control rows
+        control_rows = selected_batch[selected_batch["Celltype"] == "Control"]
+
+        # Get the average
+        avg_df = control_rows.groupby(["Celltype"])[col_name].mean()
+
+        # Store this in the dictionary created
+        control_avg_dict[batch] = avg_df["Control"]
+
+        # Divide each row in the selected_batch by the mean of controls
+        selected_batch_normalised = selected_batch
+        selected_batch_normalised[col_name] = np.log(selected_batch[col_name]/control_avg_dict[batch])
 
 
-                # Set the index
+        # Now get the average for cellines
+        cellline_df = selected_batch_normalised.groupby(["Cellline ID", "Celltype"])[col_name].mean()
+        cellline_df = cellline_df.reset_index()
 
-                # Look at the feature
-                stressor = request.form["stressor-name"]
-                feature = request.form["feature-name"]
+        # Append to the list
+        cellline_df_list.append(cellline_df)
+
+    if len(cellline_df_list) == 0:
+        flash("Bro something messed up!")
+
+    # Combine the cellline_df_list
+    combined_cellline_df = pd.concat(cellline_df_list, axis=0)
+    combined_cellline_df = combined_cellline_df.reset_index()
+    combined_cellline_df = combined_cellline_df.sort_values(by="Celltype")
+
+    # Visualise the stuff 
+    combined_cellline_df_excluded = combined_cellline_df[combined_cellline_df["Celltype"] != "Control"]
+    sns.barplot(data=combined_cellline_df_excluded, y="Cellline ID", x=col_name, hue="Celltype", ax=axes[str(timepoint)]).set_title(f"{letter}) log-fold change of {col_name} {timepoint}")
+    plt.figure(figsize=(8, 10),)
 
 
 
+@bp.route('/next_screen', methods=('GET', 'POST'))
+@login_required
+def next_screen():
+    global images, initial_dataframe
+    timepoints = request.args.getlist("timepoints")
+    cell_types = request.args.getlist("cell_types")
+    stressors = request.args.getlist("stressors")
+    columns = request.args.getlist("columns")
+    batches = request.args.getlist("batches")
+
+    # POST Method check
+    if request.method == "POST":
+        # Get the features
+        features = initial_dataframe.drop(columns=["Celltype", "Cellline ID", "Batch", "Stressor", "Row", "Column", "Timepoint", "cell_number"]).columns
+        
+        # Get the timepoints 
+        timepoints = initial_dataframe["Timepoint"].unique() 
+        print("Timepoints: ", timepoints)
+        
+        # Get the cell types
+        cell_types = initial_dataframe["Celltype"].unique()
+        print("Cell Types: ", cell_types)
+
+        # Get the stressors
+        stressors = initial_dataframe["Stressor"].unique()
+        print("Stressors: ", stressors)
+
+        # Get the batches
+        batches = initial_dataframe["Batch"].unique()
+        print("Batches: ", batches)
+
+        # Get the checked features
+        selected_features = []
+
+        # Go over the form
+        for feature in features:
+            if request.form.get(feature):
+                selected_features.append(feature)
+
+        print("Features: ", selected_features)
+
+        # Get the checked timepoints
+        selected_timepoints = []
+
+        # Go over the form
+        for timepoint in timepoints:
+            if request.form.get(f"T{timepoint}"):
+                selected_timepoints.append(timepoint)
+
+        print("Timepoints: ", selected_timepoints)
+
+        # Get the checked stressor
+        selected_stressors = []
+
+        # Go over the form
+        for stressor in stressors:
+            if request.form.get(stressor):
+                selected_stressors.append(stressor)
+
+        print("stressors: ", selected_stressors)
+
+        # Get the checked batches
+        selected_batches = []
+        
+        # Go over the form
+        for batch in batches:
+            if request.form.get(batch):
+                selected_batches.append(batch)
+
+        print("batches: ", selected_batches)
+
+        # Get the checked cell_types
+        selected_cell_types = []
+        # Go over the form
+        for cell_type in cell_types:
+            if request.form.get(cell_type):
+                selected_cell_types.append(cell_type)
+
+        print("cell_types ", selected_cell_types)
+
+        # Select the necessary columns
+        selected_columns = selected_features
+
+
+        arr = ["Timepoint", "Batch", "Cellline ID", "Celltype", "Stressor"]
+        for i in arr:
+            selected_columns.append(i)
+        
+        print("selected columns ", selected_columns)
+        selected_df = initial_dataframe[selected_columns]
+
+        print("DF before")
+        print(selected_df.head(2))
+
+        # Now do great things
+        # Filter on the necessary timepoints
+        selected_df = selected_df[selected_df["Timepoint"].isin(selected_timepoints)]
+        print("After timepoint")
+        print(selected_df.head(2))
+
+
+        # Filter on the necessary celltypes
+        selected_df = selected_df[selected_df["Celltype"].isin(selected_cell_types)]
+        print("After cell type")
+        print(selected_df.head(2))
+
+        # Filter on the necessary batches
+        selected_df = selected_df[selected_df["Batch"].isin(selected_batches)]
+        print("After batch")
+        print(selected_df.head(2))
+
+        # For each stressor
+            # For each feature
+                # Produce a nice dashboard
+        images = []
+        for stressor in selected_stressors:
+            for feature in selected_features:
                 # Develop the image
                 layout = """
-                    000000000000
-                    111122223333
-                    444455556666
-                """
+                        00000
+                        11111
+                        11111
+                        """
 
                 fig, axes = plt.subplot_mosaic(layout, figsize=(30, 20), gridspec_kw={"wspace": 1, "hspace": 0.5})
 
-                # Add text title to the top left (Area '0')
-                axes['0'].axis('off') # Hide grid lines
-                axes['0'].text(0.5, 0.5, f"{feature} ({stressor})", 
-                            fontsize=50, ha='center', va='center')
+                # Title
+                axes['0'].axis('off') 
+                axes['0'].text(0.5, 0.5, f"{feature} ({stressor})", fontsize=50, ha='center', va='center')
 
-                # Log-fold change function
-                def well_level_data_analysis_log_fold_change(df, col_name, timepoint, stressor, letter, axes):
-                    # Extract rows from a particular timepoint
-                    df_init = df
-                    df_extracted = df_init[df_init["Timepoint"] == timepoint]
-                    df_extracted = df_extracted[df_extracted["Stressor"] == stressor]
-                    
-                    # Extract the required columns
-                    df_extracted = df_extracted[["Celltype", "Cellline ID","Batch", col_name]]
-
-                    # Calculate the average of Control for each Batch
-                    batches = df_extracted["Batch"].unique()
-                    df_extracted = df_extracted.set_index("Batch")
-
-                    # Control_AVG
-                    control_avg_dict = {}
-                    cellline_df_list = []
-
-                    for batch in batches:
-                        selected_batch = df_extracted.loc[batch]
-
-                        # Get the control rows
-                        control_rows = selected_batch[selected_batch["Celltype"] == "Control"]
-
-                        # Get the average
-                        avg_df = control_rows.groupby(["Celltype"])[col_name].mean()
-
-                        # Store this in the dictionary created
-                        control_avg_dict[batch] = avg_df["Control"]
-
-                        # Divide each row in the selected_batch by the mean of controls
-                        selected_batch_normalised = selected_batch
-                        selected_batch_normalised[col_name] = np.log(selected_batch[col_name]/control_avg_dict[batch])
-
-
-                        # # Now get the average for cellines
-                        cellline_df = selected_batch_normalised.groupby(["Cellline ID", "Celltype"])[col_name].mean()
-
-                        # # Append to the list
-                        cellline_df_list.append(cellline_df)
-
-                    # Combine the cellline_df_list
-                    combined_cellline_df = pd.concat(cellline_df_list, axis=0)
-                    combined_cellline_df = combined_cellline_df.reset_index()
-                    combined_cellline_df = combined_cellline_df.sort_values(by="Celltype")
-
-                    # Visualise the stuff 
-                    combined_cellline_df_excluded = combined_cellline_df[combined_cellline_df["Celltype"] != "Control"]
-                    sns.barplot(data=combined_cellline_df_excluded, y="Cellline ID", x=col_name, hue="Celltype", ax=axes[str(timepoint)]).set_title(f"{letter}) log-fold change of {col_name} {timepoint}")
-                    plt.figure(figsize=(8, 10),)
-
+            
                 # Plot your graphs
-                def return_img():
-                    well_level_data_analysis_log_fold_change(df, "mito_TMRM intensity within MTG", 1, "DMSO", "a", axes)
-                    well_level_data_analysis_log_fold_change(df, "mito_TMRM intensity within MTG", 2, "DMSO", "b", axes)
-                    well_level_data_analysis_log_fold_change(df, "mito_TMRM intensity within MTG", 3, "DMSO", "c", axes)
-                    well_level_data_analysis_log_fold_change(df, "mito_TMRM intensity within MTG", 4, "DMSO", "d", axes)
-                    well_level_data_analysis_log_fold_change(df, "mito_TMRM intensity within MTG", 5, "DMSO", "e", axes)
-                    well_level_data_analysis_log_fold_change(df, "mito_TMRM intensity within MTG", 6, "DMSO", "f", axes)
-                    return fig
-
-                # Return the image
-                fig = return_img()
-
+                count = 0
+                for timepoint in selected_timepoints:
+                    well_level_data_analysis_log_fold_change(selected_df,feature , timepoint, stressor, f"{count}", axes)
+                    count += 1
+                
                 # Save the figure to a BytesIO buffer
                 img_buffer = io.BytesIO()
                 fig.savefig(img_buffer, format="png", bbox_inches="tight")
@@ -193,34 +355,42 @@ def create():
                 plot_url = base64.b64encode(img_buffer.getvalue()).decode("utf8")
 
                 # Clean up memory by closing the figure
+                db = get_db()
+
+                # First get the required post id
+                post_id = db.execute(
+                    'SELECT id FROM post WHERE author_id = ? ORDER BY created DESC LIMIT 1',
+                    (g.user['id'],)
+                ).fetchone()['id']
+                 
+                # Then, use the that post_id and add it to the images table
+                db.execute(
+                    'insert into image_table(post_id, plot_url)'
+                    ' values (?, ?)'
+                    ,
+                    (post_id, plot_url)
+                )
+                db.commit()
+                images.append(plot_url)
+
                 plt.close(fig)
-
+                db = get_db()
+                posts = db.execute(
+                        'SELECT p.id, title, body, created, author_id, username'
+                        ' FROM post p JOIN user u ON p.author_id = u.id'
+                        ' ORDER BY created DESC'
+                ).fetchall()
                 
-
-                error = None
-
-                if not title:
-                    error = 'Title is required.'
-
-                if error is not None:
-                    flash(error)
-                else:
-                    db = get_db()
-                    db.execute(
-                        'INSERT INTO post (title, body, author_id, script_name, script_body)'
-                        ' VALUES (?, ?, ?, ?, ?)',
-                        (title, body, g.user['id'], script.filename, script.read())
-                    )
-                    db.commit()
-                    # 5. Pass the base64 string to the HTML template
-                    return redirect(url_for('blog.index'))
-                    # return render_template("blog/index.html", plot_url=plot_url)
-            else:
-                print("Bro wrong datatype")
-
-
-
-    return render_template('blog/create.html')
+                images = db.execute(
+                        'select plot_url, post_id'
+                        ' from image_table i join post on post.id = i.post_id'
+                ).fetchall()
+                
+                # return render_template('blog/index.html', posts=posts, images=images)
+                return redirect(url_for('blog.index'))
+    
+    
+    return render_template('blog/next_screen.html', batches=batches, columns=columns, stressors=stressors, cell_types=cell_types, timepoints=timepoints)
 
 def get_post(id, check_author=True):
     post = get_db().execute(
@@ -273,58 +443,4 @@ def delete(id):
     db = get_db()
     db.execute('DELETE FROM post WHERE id = ?', (id,))
     db.commit()
-    return redirect(url_for('blog.index'))
-
-
-
-
-
-
-@bp.route('/<int:id>/use', methods=('GET', 'POST'))
-@login_required
-def use(id):
-    output = None
-    error = None
-
-    if request.method == 'POST':
-        dataset = request.files.get('dataset')
-        script = request.files.get('script')
-        print(script)
-
-        if not dataset or not script or dataset.filename == '' or script.filename == '':
-            error = "Both a dataset and a Python script are required."
-        elif not allowed_file(dataset.filename, ALLOWED_DATA_EXTENSIONS):
-            error = f"Invalid dataset format. Allowed: {', '.join(ALLOWED_DATA_EXTENSIONS)}"
-        elif not allowed_file(script.filename, ALLOWED_SCRIPT_EXTENSIONS):
-            error = "Invalid script format. Only .py files are allowed."
-        else:
-            # Create an isolated temporary directory that auto-deletes when done
-            with tempfile.TemporaryDirectory() as temp_dir:
-                data_filename = secure_filename(dataset.filename)
-                script_filename = secure_filename(script.filename)
-
-                data_path = os.path.join(temp_dir, data_filename)
-                script_path = os.path.join(temp_dir, script_filename)
-
-                dataset.save(data_path)
-                script.save(script_path)
-
-                try:
-                    # Execute the uploaded script using the current Python interpreter
-                    # Passes the dataset file path as the first argument (sys.argv[1])
-                    result = subprocess.run(
-                        [sys.executable, script_path, data_path],
-                        capture_output=True,
-                        text=True,
-                        timeout=30,  # Prevent infinite loops
-                        cwd=temp_dir # Run inside the temp directory
-                    )
-                    output = result.stdout
-                    if result.stderr:
-                        error = result.stderr
-                except subprocess.TimeoutExpired:
-                    error = "Execution timed out (30-second limit exceeded)."
-                except Exception as e:
-                    error = f"Failed to execute script: {str(e)}"
-
     return redirect(url_for('blog.index'))
