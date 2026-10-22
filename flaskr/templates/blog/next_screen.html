@@ -19,7 +19,7 @@
       {% endif %}
       {% endfor %}
     </div>
-
+    
     <!-- Select stressor -->
      <div id="stressor-form">
        <h2>Select Stressor</h2>
@@ -62,6 +62,18 @@
       {% for cell_type in cell_types %}
       <input type="checkbox" value="{{ cell_type }}" name="{{ cell_type }}" id="{{ cell_type }}">
       <label for="{{ cell_type }}">{{ cell_type }}</label>
+      {% if not loop.last %}
+      <hr>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    <!-- Select cellline id -->
+    <div id="cell-line-form">
+      <h2>Select cell_line</h2>
+      {% for cell_line in cell_lines %}
+      <input type="checkbox" value="{{ cell_line }}" name="{{ cell_line }}" id="{{ cell_line }}">
+      <label for="{{ cell_line }}">{{ cell_line }}</label>
       {% if not loop.last %}
       <hr>
       {% endif %}
